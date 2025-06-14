@@ -68,7 +68,7 @@ def update_manifest(bucket: str, key: str, processed_files: list):
         raise
 
 
-def write_parquet_to_s3(df: pd.DataFrame, bucket: str, key: str, save_local: bool = True):
+def write_parquet_to_s3(df: pd.DataFrame, bucket: str, key: str, save_local: bool = False):
     """Write a DataFrame to S3 as a Parquet file."""
     try:
         buffer = BytesIO()

@@ -1,29 +1,51 @@
 import os
 import psycopg2
 import logging
-from dotenv import load_dotenv
 import boto3
 from utils import read_manifest, update_manifest 
-
+from botocore.exceptions import ClientError
+import json
 
 STREAMS_MANIFEST_KEY = "processing-metadata/loaded_stream_files.txt"
 bucket = "music-etl-processed-data"
 
-# === Load environment variables from .env (LOCAL ONLY) ===
-load_dotenv()
 
 # === Setup Logging ===
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+
+def get_secret():
+    secret_name = "music-etl-secrets"   # change if yours is named differently
+    region_name = "us-east-1"
+
+    # Create a Secrets Manager client
+    session = boto3.session.Session()
+    client = session.client(
+        service_name="secretsmanager",
+        region_name=region_name
+    )
+
+    try:
+        get_secret_value_response = client.get_secret_value(
+            SecretId=secret_name
+        )
+    except ClientError as e:
+        raise RuntimeError(f"Failed to retrieve secret: {e}")
+
+    # Parse and return as dict
+    return json.loads(get_secret_value_response["SecretString"])
+
 # === Redshift connection ===
 def get_redshift_connection():
+    secret = get_secret()
+
     return psycopg2.connect(
-        dbname=os.getenv("REDSHIFT_DB"),
-        user=os.getenv("REDSHIFT_USER"),
-        password=os.getenv("REDSHIFT_PASSWORD"),
-        host=os.getenv("REDSHIFT_HOST"),
-        port=os.getenv("REDSHIFT_PORT", "5439")
+        dbname=secret["REDSHIFT_DB"],
+        user=secret["REDSHIFT_USER"],
+        password=secret["REDSHIFT_PASSWORD"],
+        host=secret["REDSHIFT_HOST"],
+        port=int(secret.get("REDSHIFT_PORT", 5439))
     )
 
 # === Create all main and staging tables ===
@@ -124,7 +146,8 @@ def create_tables(conn):
 # === COPY into staging tables ===
 def copy_to_staging(conn, table, s3_key):
     bucket = "music-etl-processed-data"
-    role_arn = os.getenv("REDSHIFT_IAM_ROLE")
+    secret = get_secret()
+    role_arn = secret["REDSHIFT_IAM_ROLE"]
     staging_table = f"staging_{table}"
 
     copy_sql = f"""
@@ -180,7 +203,8 @@ def get_transformed_stream_keys(bucket, prefix="transformed-data/"):
 # === COPY transformed streams directly ===
 def copy_from_s3(conn, table, s3_key):
     bucket = "music-etl-processed-data"
-    role_arn = os.getenv("REDSHIFT_IAM_ROLE")
+    secret = get_secret()
+    role_arn = secret["REDSHIFT_IAM_ROLE"]
 
     copy_sql = f"""
     COPY {table}
