@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# s3 = boto3.client("s3")
+s3 = boto3.client("s3")
 
 
 def read_csv_from_s3(bucket: str, key: str) -> pd.DataFrame:
