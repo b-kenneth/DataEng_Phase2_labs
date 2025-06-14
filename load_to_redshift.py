@@ -2,9 +2,8 @@ import os
 import psycopg2
 import logging
 import boto3
-from utils import read_manifest, update_manifest 
-from botocore.exceptions import ClientError
-import json
+from utils import read_manifest, update_manifest, get_secret
+
 
 STREAMS_MANIFEST_KEY = "processing-metadata/loaded_stream_files.txt"
 bucket = "music-etl-processed-data"
@@ -14,27 +13,6 @@ bucket = "music-etl-processed-data"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-
-def get_secret():
-    secret_name = "music-etl-secrets"   # change if yours is named differently
-    region_name = "us-east-1"
-
-    # Create a Secrets Manager client
-    session = boto3.session.Session()
-    client = session.client(
-        service_name="secretsmanager",
-        region_name=region_name
-    )
-
-    try:
-        get_secret_value_response = client.get_secret_value(
-            SecretId=secret_name
-        )
-    except ClientError as e:
-        raise RuntimeError(f"Failed to retrieve secret: {e}")
-
-    # Parse and return as dict
-    return json.loads(get_secret_value_response["SecretString"])
 
 # === Redshift connection ===
 def get_redshift_connection():

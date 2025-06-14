@@ -1,6 +1,6 @@
 import psycopg2
 import logging
-from get_redshift_secret import get_secret  # helper to fetch from Secrets Manager
+from utils import get_secret  
 
 # === Setup Logging ===
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

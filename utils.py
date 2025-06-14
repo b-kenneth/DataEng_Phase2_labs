@@ -4,7 +4,8 @@ from io import StringIO
 import os
 import logging
 from io import BytesIO
-
+from botocore.exceptions import ClientError
+import json
 
 # === Setup Logging ===
 logging.basicConfig(
@@ -75,13 +76,13 @@ def write_parquet_to_s3(df: pd.DataFrame, bucket: str, key: str, save_local: boo
         df.to_parquet(buffer, index=False, engine="pyarrow")
         buffer.seek(0)
         s3.put_object(Bucket=bucket, Key=key, Body=buffer.getvalue())
-        logger.info(f"✅ Parquet written to s3://{bucket}/{key}")
+        logger.info(f"Parquet written to s3://{bucket}/{key}")
 
         if save_local:
             os.makedirs("output", exist_ok=True)
             local_path = f"output/{key.replace('/', '_').replace('.parquet', '')}.parquet"
             df.to_parquet(local_path, index=False)
-            logger.info(f"💾 Also saved locally to {local_path}")
+            logger.info(f"Also saved locally to {local_path}")
 
     except Exception as e:
         logger.exception(f"Failed to write Parquet to s3://{bucket}/{key}")
@@ -90,12 +91,32 @@ def write_parquet_to_s3(df: pd.DataFrame, bucket: str, key: str, save_local: boo
 def read_parquet_from_s3(bucket: str, key: str) -> pd.DataFrame:
     """Read a Parquet file from S3 and return as DataFrame."""
     try:
-        logger.info(f"📥 Reading Parquet from s3://{bucket}/{key}")
+        logger.info(f"Reading Parquet from s3://{bucket}/{key}")
         response = s3.get_object(Bucket=bucket, Key=key)
         df = pd.read_parquet(BytesIO(response['Body'].read()))
-        logger.info(f"✅ Loaded {len(df)} rows from {key}")
+        logger.info(f"Loaded {len(df)} rows from {key}")
         return df
     except Exception as e:
-        logger.exception(f"❌ Failed to read Parquet from s3://{bucket}/{key}")
+        logger.exception(f"Failed to read Parquet from s3://{bucket}/{key}")
         raise
 
+def get_secret():
+    secret_name = "music-etl-secrets" 
+    region_name = "us-east-1"
+
+    # Create a Secrets Manager client
+    session = boto3.session.Session()
+    client = session.client(
+        service_name="secretsmanager",
+        region_name=region_name
+    )
+
+    try:
+        get_secret_value_response = client.get_secret_value(
+            SecretId=secret_name
+        )
+    except ClientError as e:
+        raise RuntimeError(f"Failed to retrieve secret: {e}")
+
+    # Parse and return as dict
+    return json.loads(get_secret_value_response["SecretString"])
