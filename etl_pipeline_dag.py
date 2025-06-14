@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from extract_and_validate import extract_and_validate
 from transform import transform
+from load_to_redshift import load_all
 
 # === DAG Default Config ===
 default_args = {
@@ -33,4 +34,12 @@ with DAG(
         python_callable=transform,
     )
 
-    extract_validate_task >> transform_task
+    load_to_redshift_task = PythonOperator(
+    task_id="load_to_redshift",
+    python_callable=load_all,
+    )
+
+
+    # DAG Flow
+    extract_validate_task >> transform_task >> load_to_redshift_task
+

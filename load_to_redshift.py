@@ -125,7 +125,7 @@ def create_tables(conn):
 def copy_to_staging(conn, table, s3_key):
     bucket = "music-etl-processed-data"
     role_arn = os.getenv("REDSHIFT_IAM_ROLE")
-    staging_table = f"staging_{table}"  # e.g. staging_raw_users
+    staging_table = f"staging_{table}"
 
     copy_sql = f"""
     COPY {staging_table}
