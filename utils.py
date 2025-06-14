@@ -15,12 +15,6 @@ logger = logging.getLogger(__name__)
 
 # s3 = boto3.client("s3")
 
-s3 = boto3.client(
-    "s3",
-    aws_access_key_id="AKIA6OKHPUYJ5RRBW25Q",
-    aws_secret_access_key="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",
-    region_name="us-east-1"
-)
 
 def read_csv_from_s3(bucket: str, key: str) -> pd.DataFrame:
     """Read a CSV file from S3 and return as a pandas DataFrame."""
