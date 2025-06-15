@@ -7,7 +7,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 def get_redshift_connection():
-    secret = get_secret("music-etl-secrets")
+    secret = get_secret()
+
     return psycopg2.connect(
         dbname=secret["REDSHIFT_DB"],
         user=secret["REDSHIFT_USER"],
@@ -40,13 +41,13 @@ def compute_genre_kpis(cur):
             most_popular.track_name AS most_popular_track,
             most_popular.popularity AS popularity_score
         FROM transformed_streams st
-        JOIN transformed_songs ts ON st.track_id = ts.track_id
+        JOIN processed_songs ts ON st.track_id = ts.track_id
         JOIN (
             SELECT track_genre, track_name, popularity
             FROM (
                 SELECT track_genre, track_name, popularity,
                        ROW_NUMBER() OVER (PARTITION BY track_genre ORDER BY popularity DESC) as rn
-                FROM transformed_songs
+                FROM processed_songs
             ) ranked
             WHERE rn = 1
         ) most_popular ON ts.track_genre = most_popular.track_genre
@@ -75,7 +76,7 @@ def compute_hourly_kpis(cur):
                 st.track_id,
                 ts.artists
             FROM transformed_streams st
-            JOIN transformed_songs ts ON st.track_id = ts.track_id
+            JOIN processed_songs ts ON st.track_id = ts.track_id
         ),
         artist_rank AS (
             SELECT

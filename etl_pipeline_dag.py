@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from extract_and_validate import extract_and_validate
 from transform import transform
 from load_to_redshift import load_all
+from compute_kpis import compute_kpis
+
 
 # === DAG Default Config ===
 default_args = {
@@ -39,7 +41,13 @@ with DAG(
     python_callable=load_all,
     )
 
+    compute_kpis_task = PythonOperator(
+    task_id="compute_kpis",
+    python_callable=compute_kpis,
+    )
+
+
 
     # DAG Flow
-    extract_validate_task >> transform_task >> load_to_redshift_task
+    extract_validate_task >> transform_task >> load_to_redshift_task >> compute_kpis_task
 
