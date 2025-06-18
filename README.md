@@ -560,21 +560,26 @@ Table: `genre_kpis` (or temporary result for dashboard)
 
 ```sql
 SELECT
-    s.track_genre,
-    COUNT(*) AS total_plays,
-    ROUND(AVG(s.popularity), 1) AS avg_popularity,
-    ROUND(AVG(s.duration_ms) / 1000, 2) AS avg_duration_sec
-FROM
-    transformed_songs s
-JOIN
-    transformed_streams t ON s.track_id = t.track_id
-GROUP BY
-    s.track_genre
-ORDER BY
-    total_plays DESC;
+            ts.track_genre,
+            COUNT(*) AS listen_count,
+            ROUND(AVG(ts.duration_ms / 1000.0), 2) AS avg_duration_sec,
+            ROUND(AVG(ts.popularity), 2) AS avg_popularity,
+            ROUND(AVG(ts.popularity) * COUNT(*), 2) AS popularity_index,
+            most_popular.track_name AS most_popular_track,
+            most_popular.popularity AS popularity_score
+        FROM transformed_streams st
+        JOIN processed_songs ts ON st.track_id = ts.track_id
+        JOIN (
+            SELECT track_genre, track_name, popularity
+            FROM (
+                SELECT track_genre, track_name, popularity,
+                       ROW_NUMBER() OVER (PARTITION BY track_genre ORDER BY popularity DESC) as rn
+                FROM processed_songs
+            ) ranked
+            WHERE rn = 1
+        ) most_popular ON ts.track_genre = most_popular.track_genre
+        GROUP BY ts.track_genre, most_popular.track_name, most_popular.popularity;
 ```
-
-> 💡 Helps identify what genres are trending.
 
 ---
 
@@ -583,18 +588,33 @@ ORDER BY
 Table: `hourly_kpis`
 
 ```sql
-SELECT
-    t.hour,
-    COUNT(DISTINCT t.user_id) AS unique_listeners,
-    COUNT(*) AS total_plays,
-    COUNT(DISTINCT t.track_id) AS unique_tracks,
-    ROUND(COUNT(DISTINCT t.track_id)::decimal / COUNT(*), 3) AS track_diversity_index
-FROM
-    transformed_streams t
-GROUP BY
-    t.hour
-ORDER BY
-    t.hour;
+WITH hourly_data AS (
+            SELECT
+                st.hour,
+                st.user_id,
+                st.track_id,
+                ts.artists
+            FROM transformed_streams st
+            JOIN processed_songs ts ON st.track_id = ts.track_id
+        ),
+        artist_rank AS (
+            SELECT
+                hour,
+                artists,
+                ROW_NUMBER() OVER (PARTITION BY hour ORDER BY COUNT(*) DESC) AS rn
+            FROM hourly_data
+            GROUP BY hour, artists
+        )
+        SELECT
+            hour,
+            COUNT(DISTINCT user_id) AS unique_listeners,
+            COUNT(*) AS total_plays,
+            COUNT(DISTINCT track_id) AS unique_tracks,
+            ROUND(COUNT(DISTINCT track_id) * 1.0 / COUNT(*), 3) AS track_diversity_index,
+            MAX(CASE WHEN rn = 1 THEN artists END) AS top_artist
+        FROM hourly_data
+        LEFT JOIN artist_rank USING (hour, artists)
+        GROUP BY hour;
 ```
 
 > 💡 Shows user behavior across the day.
@@ -604,14 +624,14 @@ ORDER BY
 #### 3. 🌟 **Top Artist Per Hour**
 
 ```sql
-SELECT DISTINCT ON (t.hour)
+SELECT DISTINCT
     t.hour,
     s.artists,
     COUNT(*) OVER (PARTITION BY t.hour, s.artists) AS play_count
 FROM
     transformed_streams t
 JOIN
-    transformed_songs s ON t.track_id = s.track_id
+    processed_songs s ON t.track_id = s.track_id
 ORDER BY
     t.hour, play_count DESC;
 ```
