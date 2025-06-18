@@ -1,0 +1,77 @@
+{
+  "Comment": "Orchestrates the Rental Marketplace ETL Pipeline",
+  "StartAt": "Run Aurora to S3 Job",
+  "States": {
+    "Run Aurora to S3 Job": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "aurora_to_s3_apartments"
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Pipeline Failed"
+        }
+      ],
+      "Next": "Run S3 to Redshift Raw Job"
+    },
+    "Run S3 to Redshift Raw Job": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "S3 raw to Redshift raw layer"
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Pipeline Failed"
+        }
+      ],
+      "Next": "Run Raw to Curated Job"
+    },
+    "Run Raw to Curated Job": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "Raw to curated"
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Pipeline Failed"
+        }
+      ],
+      "Next": "Run KPI Computations Job"
+    },
+    "Run KPI Computations Job": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "Kpi_computations"
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Pipeline Failed"
+        }
+      ],
+      "Next": "Pipeline Succeeded"
+    },
+    "Pipeline Succeeded": {
+      "Type": "Succeed"
+    },
+    "Pipeline Failed": {
+      "Type": "Fail",
+      "Comment": "The pipeline execution failed."
+    }
+  }
+}

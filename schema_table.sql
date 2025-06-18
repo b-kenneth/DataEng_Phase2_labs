@@ -134,3 +134,7 @@ CREATE TABLE IF NOT EXISTS curated.user_viewings (
     viewing_month VARCHAR(50),
     viewing_day_of_week VARCHAR(50)
 );
+
+
+
+
