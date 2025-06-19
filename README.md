@@ -1,26 +1,16 @@
-# 🔧 1. Architecture Overview — Design Breakdown
+# 1. Architecture Overview — Design Breakdown
 
 ![Diagram](images/architecture.png)
 
-## 📥 Input Data: CSV files uploaded to Amazon S3
+## Input Data: CSV files uploaded to Amazon S3
 
-**Design Choice:** CSV files for `songs`, `users`, and `streams` are the raw inputs and are manually or programmatically uploaded to a source S3 bucket (e.g. `music-streaming-etl-data`).
+CSV files for `songs`, `users`, and `streams` are the raw inputs and are manually or uploaded to a source S3 bucket to simulate streaming from RDS (e.g. `music-streaming-etl-data`).
 
-**Why this works well:**
-* S3 is a durable, highly available, cost-effective object store.
-* CSV is a common interchange format; easy to generate and process.
-* Using S3 decouples your data source from your processing logic — making the pipeline more scalable and modular.
+## Orchestration: Amazon MWAA (Managed Workflows for Apache Airflow)
 
-## ⚙️ Orchestration: Amazon MWAA (Managed Workflows for Apache Airflow)
+Airflow is used to orchestrate the pipeline steps — from extract to load — and hosted using MWAA.
 
-**Design Choice:** Airflow is used to orchestrate the pipeline steps — from extract to load — and hosted using MWAA.
-
-**Why MWAA:**
-* No need to manage Airflow infrastructure.
-* Easily integrates with other AWS services like S3, Redshift, and Secrets Manager.
-* Supports retries, logging, scheduling, and task dependencies out of the box.
-
-## 🗃️ Storage: Processed files saved back to S3 in Parquet format
+## Storage: Processed files saved back to S3 in Parquet format
 
 **Design Choice:** After validation and transformation, all datasets are saved back into a *processed* S3 bucket (e.g. `music-etl-processed-data`) in **Parquet format**.
 
@@ -29,26 +19,20 @@
 * Smaller size = reduced storage and I/O costs.
 * Redshift Spectrum and COPY natively support Parquet — it's optimized for analytical workloads.
 
-## 🧠 Data Warehouse: Amazon Redshift
+## Data Warehouse: Amazon Redshift
 
-**Design Choice:** Final structured and analytical data is loaded into Amazon Redshift.
+Final structured and analytical data is loaded into Amazon Redshift.
 
-**Why Redshift:**
-* Fully managed data warehouse, good for analytical queries.
-* Scales well with large volumes of streaming data.
-* Integration with COPY command (and Parquet) makes it ideal for batch loading.
-* KPI computations are performed directly in Redshift using SQL, leveraging its performance.
+## Security: AWS Secrets Manager for credentials
 
-## 🔐 Security: AWS Secrets Manager for credentials
-
-**Design Choice:** Instead of hardcoding secrets or using `.env` files in production, we store DB credentials and IAM roles securely in Secrets Manager.
+**Design Choice:** Instead of hardcoding secrets or using `.env` files in production, I stored DB credentials and IAM roles securely in Secrets Manager.
 
 **Why Secrets Manager:**
 * Centralized, encrypted secret storage.
 * Rotatable secrets.
-* Easy integration with Airflow via environment variables or programmatic access.
+* Easy integration with Airflow via programmatic access.
 
-## 🔄 Data Flow Steps
+## Data Flow Steps
 
 ### 1. Extract + Validate from S3
 * Read raw CSVs from `music-streaming-etl-data`.
@@ -66,14 +50,9 @@
 
 ### 4. Compute KPIs
 * Redshift SQL computes per-genre and per-hour KPIs.
-* KPI tables are updated (either overwritten or merged depending on design).
+* KPI tables are updated.
 
-
-Great — let’s now dive into:
-
----
-
-## 📁 2. Folder Structure (Local Setup) — Design Breakdown
+## 2. Folder Structure (Local Setup) — Design Breakdown
 
 ```bash
 project-root/
@@ -91,13 +70,11 @@ requirements.txt                    # All Python + Airflow dependencies
 
 ---
 
-### 🔹 Why This Folder Layout?
+### 🔹 Folder Layout?
 
 #### `dags/`
 
 * **Purpose**: Holds the DAG definition (`etl_pipeline_dag.py`) — the orchestration logic.
-* **Why separate?** Airflow only scans this folder for DAGs, not supporting files. This ensures DAG code stays minimal and imports actual logic from `tasks/`.
-
 
 #### `utils.py`
 
@@ -121,11 +98,10 @@ requirements.txt                    # All Python + Airflow dependencies
 * Includes:
 
   * `pandas`, `pyarrow`, `psycopg2`, `boto3`
-  * `apache-airflow-providers-amazon`
 * **Why?** Ensures MWAA and your local environment have consistent dependencies.
 
 
-## ☁️ 3. AWS Setup Steps — Design Breakdown
+## 3. AWS Setup Steps — Design Breakdown
 
 This section outlines the cloud resources needed to run the pipeline seamlessly on AWS and the reasoning behind each.
 
@@ -140,8 +116,6 @@ This section outlines the cloud resources needed to run the pipeline seamlessly 
 
 **Design Reasons:**
 
-* **Decoupling**: Separates raw and processed data for traceability and reprocessing if needed.
-* **Scalability**: S3 handles massive file volumes efficiently.
 * **Organization**: The use of prefixes like `metadata/`, `validated-data/`, `transformed-data/` keeps the pipeline modular and auditable.
 
 ---
@@ -152,19 +126,6 @@ This section outlines the cloud resources needed to run the pipeline seamlessly 
 | ----------- | ----------------------------------- |
 | Contains    | Redshift credentials + IAM Role ARN |
 | Format      | JSON                                |
-
-**Sample Value:**
-
-```json
-{
-  "REDSHIFT_DB": "dev",
-  "REDSHIFT_USER": "awsuser",
-  "REDSHIFT_PASSWORD": "your-password",
-  "REDSHIFT_HOST": "your-redshift-endpoint",
-  "REDSHIFT_PORT": "5439",
-  "REDSHIFT_IAM_ROLE": "arn:aws:iam::your-account:role/your-redshift-role"
-}
-```
 
 **Why Secrets Manager?**
 
@@ -183,21 +144,15 @@ This section outlines the cloud resources needed to run the pipeline seamlessly 
 * Enable **public accessibility** (for testing or controlled MWAA access)
 * Attach an **IAM role** with **S3 read permissions**
 
-**Why Redshift?**
-
-* **Scalable data warehouse**: optimized for analytics and aggregations.
-* **Built-in COPY command** for fast data ingestion.
-* **Parquet support** allows efficient columnar storage and loads.
-
 ---
 
-### 🔹 Optional: MWAA Execution Role
+### 🔹MWAA Execution Role
 
 Make sure your MWAA execution role has permission to:
 
 * Read from `SecretsManager`
 * Access your input/output S3 buckets
-* (Optional) Push logs to CloudWatch for observability
+* Push logs to CloudWatch for observability
 
 ---
 
@@ -213,22 +168,15 @@ Make sure your MWAA execution role has permission to:
 
 ---
 
-
-Great — let’s cover **both**:
-
----
-
 ## 🧪 4. Local Testing Setup — Before Moving to MWAA
 
-Before deploying to MWAA, everything should be runnable **locally** using standard Airflow.
+Before deploying to MWAA, everything was runnable **locally** using standard Airflow.
 
 ---
 
 ### ✅ Local Testing Setup
 
 #### 1. **Install Dependencies**
-
-Ensure Python 3.9+ and virtualenv are installed.
 
 ```bash
 pip install -r requirements.txt
@@ -293,9 +241,9 @@ Your DAG `music_etl_pipeline` should appear in the UI.
 
 ---
 
-## ☁️ MWAA Configuration + Role Setup
+## MWAA Configuration + Role Setup
 
-### 🏗️ 1. Create MWAA Environment
+### 1. Create MWAA Environment
 
 1. Go to **Amazon MWAA → Create Environment**
 2. Set:
@@ -307,7 +255,7 @@ Your DAG `music_etl_pipeline` should appear in the UI.
 
 ---
 
-### 🔐 2. IAM Role for MWAA (Execution Role)
+### 2. IAM Role for MWAA (Execution Role)
 
 **MWAAExecutionRole** needs access to:
 
@@ -315,13 +263,13 @@ Your DAG `music_etl_pipeline` should appear in the UI.
 * `s3:GetObject`, `s3:ListBucket`
 * (Optional) `logs:*` for CloudWatch
 
-✅ Also attach `AmazonMWAAWebAccess` and `AmazonRedshiftAllCommandsFullAccess` (or scoped Redshift policies).
+Also attach `AmazonMWAAWebAccess` and `AmazonRedshiftAllCommandsFullAccess` (or scoped Redshift policies).
 
 ---
 
-### 🔑 3. MWAA Uses Secrets, Not .env
+### 3. MWAA Uses Secrets, Not .env
 
-Replace your local `.env` usage like:
+Replace the local `.env` usage like:
 
 ```python
 # Local
@@ -337,14 +285,14 @@ Where `get_secret()` is your `boto3` function to fetch secrets from AWS Secrets 
 
 ---
 
-### ⬆️ 4. Deploying to MWAA
+### 4. Deploying to MWAA
 
 * Upload csvs and dag files to the S3 path you configured
 
 ---
 
 
-## 🧩 5. DAG Logic & Orchestration Flow
+## 5. DAG Logic & Orchestration Flow
 
 This section explains how your **Airflow DAG** is structured to orchestrate the pipeline, and why it's designed that way.
 
@@ -353,7 +301,7 @@ This section explains how your **Airflow DAG** is structured to orchestrate the 
 
 ---
 
-### 🔹 DAG Overview
+### DAG Overview
 
 ```python
 from airflow import DAG
@@ -404,7 +352,7 @@ with DAG(
 
 ---
 
-### 🧠 Why This DAG Flow?
+### Why This DAG Flow?
 
 | Step                   | Description                                                           | Reason                                                                  |
 | ---------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -415,9 +363,9 @@ with DAG(
 
 ---
 
-### ⚙️ Scheduling: `@daily`
+### Scheduling: `@daily`
 
-* **Why daily?** The stream data is expected to arrive in batches.
+* The stream data is expected to arrive in batches.
 * **Each run**:
 
   * Detects and processes only new files (via manifest logic).
@@ -425,24 +373,20 @@ with DAG(
 
 ---
 
-### 🛡️ Idempotency + Safety
+### Idempotency + Safety
 
 * **Stream deduplication** handled using S3 manifest logic.
 * **Songs/Users deduplication** handled via staging tables + insert `NOT EXISTS`.
 
 ---
 
-Awesome. Let’s now walk through:
-
----
-
-## 🔄 6. Data Flow Walkthrough
+## 6. Data Flow Walkthrough
 
 This section describes exactly **how data flows** across each part of the pipeline, including **what happens at every step**, what files are touched, and **why**.
 
 ---
 
-### 🔁 Step-by-Step Flow
+### Step-by-Step Flow
 
 #### 1. **Raw Data Uploaded to S3**
 
@@ -458,17 +402,17 @@ This section describes exactly **how data flows** across each part of the pipeli
 
 #### 2. **Airflow DAG Starts** → `extract_and_validate.py`
 
-* ✅ Validates:
+* Validates:
 
   * Required columns
   * Missing/null fields
   * Data types (e.g. `int`, `date`, `timestamp`)
   * Value ranges (e.g. age 13–120, non-negative durations)
-* ✅ Converts:
+* Converts:
 
   * Data into **cleaned pandas DataFrames**
   * Saves them as **Parquet** to `s3://music-etl-processed-data/validated-data/*.parquet`
-* ✅ Updates:
+* Updates:
 
   * **Manifest file** (`processed_stream_files.txt`) to avoid reprocessing past batches
 
@@ -482,32 +426,32 @@ This section describes exactly **how data flows** across each part of the pipeli
   * `transformed_songs.parquet`
   * `streams1_transformed.parquet`, `streams2_transformed.parquet`, etc.
 
-* ✅ Normalizes:
+* Normalizes:
 
   * Genre strings
   * Time columns (`created_at`, `listen_time`)
 
-* ✅ Derives:
+* Derives:
 
   * `duration_sec` from `duration_ms`
   * `hour` from `listen_time`
 
-* ✅ Appends transformed files to:
+* Appends transformed files to:
   `s3://music-etl-processed-data/transformed-data/`
 
 ---
 
 #### 4. **DAG Continues** → `load_to_redshift.py`
 
-* ✅ Raw and Transformed Tables:
+* Raw and Transformed Tables:
 
   * `raw_users`, `raw_songs` (deduplicated inserts from staging)
   * `transformed_users`, `transformed_songs` (new step!)
   * `transformed_streams` (only new files, no reloading old ones)
 
-* ✅ Parquet data is COPY’d into Redshift tables using IAM role access.
+* Parquet data is COPY’d into Redshift tables using IAM role access.
 
-* ✅ Uses:
+* Uses:
 
   * **Staging tables** to deduplicate songs/users by `track_id` and `user_id`
   * **S3 manifest** to skip previously loaded stream files
@@ -516,13 +460,13 @@ This section describes exactly **how data flows** across each part of the pipeli
 
 #### 5. **DAG Continues** → `compute_kpis.py` (optional)
 
-* ✅ Runs SQL queries on Redshift like:
+* Runs SQL queries on Redshift like:
 
   * Top artists by hour
   * Most popular genre
   * Listening pattern by hour
   * Track diversity index
-* ✅ Saves results as:
+* Saves results as:
 
   * `genre_kpis.csv`
   * `hourly_kpis.csv`
@@ -530,17 +474,13 @@ This section describes exactly **how data flows** across each part of the pipeli
 
 ---
 
-Great! Let’s dive into:
-
----
-
-## 📊 7. KPI Outputs in Redshift
+## 7. KPI Outputs in Redshift
 
 Once your data is loaded and transformed in Redshift, KPIs (Key Performance Indicators) are computed **directly in the warehouse** for speed, scalability, and analytical flexibility.
 
 ---
 
-### 🧠 KPI Computation Strategy
+### KPI Computation Strategy
 
 All KPIs are generated from **three main tables** in Redshift:
 
@@ -549,102 +489,6 @@ All KPIs are generated from **three main tables** in Redshift:
 * `transformed_streams`
 
 These contain only **clean**, **normalized**, and **append-only** data — ideal for analytics.
-
----
-
-### 📈 Types of KPIs Generated
-
-#### 1. 🎵 **Genre KPIs**
-
-Table: `genre_kpis` (or temporary result for dashboard)
-
-```sql
-SELECT
-            ts.track_genre,
-            COUNT(*) AS listen_count,
-            ROUND(AVG(ts.duration_ms / 1000.0), 2) AS avg_duration_sec,
-            ROUND(AVG(ts.popularity), 2) AS avg_popularity,
-            ROUND(AVG(ts.popularity) * COUNT(*), 2) AS popularity_index,
-            most_popular.track_name AS most_popular_track,
-            most_popular.popularity AS popularity_score
-        FROM transformed_streams st
-        JOIN processed_songs ts ON st.track_id = ts.track_id
-        JOIN (
-            SELECT track_genre, track_name, popularity
-            FROM (
-                SELECT track_genre, track_name, popularity,
-                       ROW_NUMBER() OVER (PARTITION BY track_genre ORDER BY popularity DESC) as rn
-                FROM processed_songs
-            ) ranked
-            WHERE rn = 1
-        ) most_popular ON ts.track_genre = most_popular.track_genre
-        GROUP BY ts.track_genre, most_popular.track_name, most_popular.popularity;
-```
-
----
-
-#### 2. ⏱️ **Hourly Listening KPIs**
-
-Table: `hourly_kpis`
-
-```sql
-WITH hourly_data AS (
-            SELECT
-                st.hour,
-                st.user_id,
-                st.track_id,
-                ts.artists
-            FROM transformed_streams st
-            JOIN processed_songs ts ON st.track_id = ts.track_id
-        ),
-        artist_rank AS (
-            SELECT
-                hour,
-                artists,
-                ROW_NUMBER() OVER (PARTITION BY hour ORDER BY COUNT(*) DESC) AS rn
-            FROM hourly_data
-            GROUP BY hour, artists
-        )
-        SELECT
-            hour,
-            COUNT(DISTINCT user_id) AS unique_listeners,
-            COUNT(*) AS total_plays,
-            COUNT(DISTINCT track_id) AS unique_tracks,
-            ROUND(COUNT(DISTINCT track_id) * 1.0 / COUNT(*), 3) AS track_diversity_index,
-            MAX(CASE WHEN rn = 1 THEN artists END) AS top_artist
-        FROM hourly_data
-        LEFT JOIN artist_rank USING (hour, artists)
-        GROUP BY hour;
-```
-
-> 💡 Shows user behavior across the day.
-
----
-
-#### 3. 🌟 **Top Artist Per Hour**
-
-```sql
-SELECT DISTINCT
-    t.hour,
-    s.artists,
-    COUNT(*) OVER (PARTITION BY t.hour, s.artists) AS play_count
-FROM
-    transformed_streams t
-JOIN
-    processed_songs s ON t.track_id = s.track_id
-ORDER BY
-    t.hour, play_count DESC;
-```
-
-> 💡 Tells which artists are dominating at what times.
-
----
-
-### 🔄 When Are KPIs Updated?
-
-* On **every DAG run**
-* After new data is **loaded**
-* Existing Redshift data is used — no S3 re-reads
 
 ---
 
