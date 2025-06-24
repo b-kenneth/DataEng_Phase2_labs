@@ -43,7 +43,7 @@ def main():
         logger.info(f"Using S3 bucket: {bucket_name}")
         
         # Read raw data from S3
-        logger.info("📖 Starting to read raw data from S3...")
+        logger.info("Starting to read raw data from S3...")
         
         try:
             vehicles_df = spark.read.option("header", "true").csv(f"s3://{bucket_name}/raw/vehicles.csv")
@@ -98,7 +98,7 @@ def main():
             raise
         
         # Join transactions with pickup locations
-        logger.info("🔗 Starting data joins...")
+        logger.info("Starting data joins...")
         try:
             pickup_enriched_df = transactions_df \
                 .join(locations_df.alias("pickup_loc"), 
@@ -132,7 +132,7 @@ def main():
             raise
         
         # KPI 1: Location Performance Metrics
-        logger.info("📊 Calculating location performance metrics...")
+        logger.info("Calculating location performance metrics...")
         try:
             location_metrics = final_enriched_df.groupBy("pickup_location", "pickup_location_name", "pickup_city", "pickup_state") \
                 .agg(
@@ -156,7 +156,7 @@ def main():
             raise
         
         # KPI 2: Vehicle Type Performance Metrics
-        logger.info("🚗 Calculating vehicle type performance metrics...")
+        logger.info("Calculating vehicle type performance metrics...")
         try:
             vehicle_type_metrics = final_enriched_df.groupBy("vehicle_type", "brand") \
                 .agg(
@@ -179,7 +179,7 @@ def main():
             raise
         
         # KPI 3: Brand Performance Metrics
-        logger.info("🏷️ Calculating brand performance metrics...")
+        logger.info("Calculating brand performance metrics...")
         try:
             brand_metrics = final_enriched_df.groupBy("brand") \
                 .agg(
@@ -200,7 +200,7 @@ def main():
             raise
         
         # Write results to S3 in Parquet format
-        logger.info("💾 Writing processed data to S3...")
+        logger.info("Writing processed data to S3...")
         
         try:
             location_metrics.coalesce(1).write.mode("overwrite") \
@@ -230,7 +230,7 @@ def main():
             raise
         
         # Show sample results
-        logger.info("📋 Displaying sample results...")
+        logger.info("Displaying sample results...")
         print("Location Metrics Sample:")
         location_metrics.show(10, truncate=False)
         
@@ -240,7 +240,7 @@ def main():
         print("Brand Metrics Sample:")
         brand_metrics.show(10, truncate=False)
         
-        logger.info("✅ Vehicle and Location metrics processing completed successfully!")
+        logger.info("Vehicle and Location metrics processing completed successfully!")
         
     except Exception as e:
         logger.critical(f"Critical error in main processing: {str(e)}")

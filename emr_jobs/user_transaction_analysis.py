@@ -43,7 +43,7 @@ def main():
         logger.info(f"Using S3 bucket: {bucket_name}")
         
         # Read raw data from S3
-        logger.info("📖 Starting to read raw data from S3...")
+        logger.info("Starting to read raw data from S3...")
         
         try:
             users_df = spark.read.option("header", "true").csv(f"s3://{bucket_name}/raw/users.csv")
@@ -110,7 +110,7 @@ def main():
             raise
         
         # KPI 1: Daily Transaction Metrics
-        logger.info("📅 Calculating daily transaction metrics...")
+        logger.info("Calculating daily transaction metrics...")
         try:
             daily_metrics = transactions_df.groupBy("rental_date") \
                 .agg(
@@ -133,7 +133,7 @@ def main():
             raise
         
         # KPI 2: Hourly Transaction Patterns
-        logger.info("⏰ Calculating hourly transaction patterns...")
+        logger.info("Calculating hourly transaction patterns...")
         try:
             hourly_metrics = transactions_df.groupBy("rental_hour") \
                 .agg(
@@ -148,7 +148,7 @@ def main():
             raise
         
         # Join with users data for user analysis
-        logger.info("🔗 Joining transaction data with user data...")
+        logger.info("Joining transaction data with user data...")
         try:
             user_transactions = transactions_df.join(users_df, "user_id", "left")
             user_transaction_count = user_transactions.count()
@@ -182,7 +182,7 @@ def main():
             raise
         
         # KPI 4: Monthly Transaction Trends
-        logger.info("📊 Calculating monthly transaction trends...")
+        logger.info("Calculating monthly transaction trends...")
         try:
             monthly_metrics = transactions_df.groupBy("rental_month") \
                 .agg(
@@ -199,7 +199,7 @@ def main():
             raise
         
         # KPI 5: Active vs Inactive User Analysis
-        logger.info("🔍 Analyzing active vs inactive users...")
+        logger.info("Analyzing active vs inactive users...")
         try:
             user_activity_metrics = user_transactions.groupBy("is_active") \
                 .agg(
@@ -215,7 +215,7 @@ def main():
             raise
         
         # Write results to S3 in Parquet format
-        logger.info("💾 Writing processed data to S3...")
+        logger.info("Writing processed data to S3...")
         
         try:
             daily_metrics.coalesce(1).write.mode("overwrite") \
@@ -263,7 +263,7 @@ def main():
             raise
         
         # Show sample results
-        logger.info("📋 Displaying sample results...")
+        logger.info("Displaying sample results...")
         print("Daily Metrics Sample:")
         daily_metrics.show(10, truncate=False)
         
@@ -276,7 +276,7 @@ def main():
         print("User Activity Analysis:")
         user_activity_metrics.show(truncate=False)
         
-        logger.info("✅ User and Transaction analysis completed successfully!")
+        logger.info("User and Transaction analysis completed successfully!")
         
     except Exception as e:
         logger.critical(f"Critical error in main processing: {str(e)}")
