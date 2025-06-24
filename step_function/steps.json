@@ -1,0 +1,346 @@
+{
+  "Comment": "Car Rental Data Processing Pipeline with Parallel Spark Jobs",
+  "StartAt": "CreateEMRCluster",
+  "States": {
+    "CreateEMRCluster": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::elasticmapreduce:createCluster.sync",
+      "Parameters": {
+        "Name": "CarRentalDataProcessing",
+        "ReleaseLabel": "emr-7.9.0",
+        "Applications": [
+          {
+            "Name": "Spark"
+          },
+          {
+            "Name": "Hadoop"
+          },
+          {
+            "Name": "Hive"
+          },
+          {
+            "Name": "JupyterEnterpriseGateway"
+          },
+          {
+            "Name": "Livy"
+          }
+        ],
+        "ServiceRole": "EMR_Role",
+        "JobFlowRole": "AmazonEMR-InstanceProfile-20250623T075014",
+        "LogUri": "s3://car-rental-data-buck1/emr-logs/",
+        "Instances": {
+          "InstanceGroups": [
+            {
+              "Name": "Master",
+              "Market": "ON_DEMAND",
+              "InstanceRole": "MASTER",
+              "InstanceType": "m5.xlarge",
+              "InstanceCount": 1
+            },
+            {
+              "Name": "Core",
+              "Market": "ON_DEMAND",
+              "InstanceRole": "CORE",
+              "InstanceType": "m5.xlarge",
+              "InstanceCount": 2
+            }
+          ],
+          "KeepJobFlowAliveWhenNoSteps": true,
+          "TerminationProtected": false
+        },
+        "VisibleToAllUsers": true
+      },
+      "ResultPath": "$.ClusterInfo",
+      "Next": "RunSparkJobsInParallel",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ClusterCreationFailed",
+          "ResultPath": "$.Error"
+        }
+      ]
+    },
+    "RunSparkJobsInParallel": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "RunSparkJob1",
+          "States": {
+            "RunSparkJob1": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
+              "Parameters": {
+                "ClusterId.$": "$.ClusterInfo.ClusterId",
+                "Step": {
+                  "Name": "Vehicle Location Metrics",
+                  "ActionOnFailure": "CONTINUE",
+                  "HadoopJarStep": {
+                    "Jar": "command-runner.jar",
+                    "Args": [
+                      "spark-submit",
+                      "--deploy-mode",
+                      "cluster",
+                      "s3://car-rental-data-buck1/scripts/vehicle_location_metrics.py"
+                    ]
+                  }
+                }
+              },
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                }
+              ]
+            }
+          }
+        },
+        {
+          "StartAt": "RunSparkJob2",
+          "States": {
+            "RunSparkJob2": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
+              "Parameters": {
+                "ClusterId.$": "$.ClusterInfo.ClusterId",
+                "Step": {
+                  "Name": "User Transaction Analysis",
+                  "ActionOnFailure": "CONTINUE",
+                  "HadoopJarStep": {
+                    "Jar": "command-runner.jar",
+                    "Args": [
+                      "spark-submit",
+                      "--deploy-mode",
+                      "cluster",
+                      "s3://car-rental-data-buck1/scripts/user_transaction_analysis.py"
+                    ]
+                  }
+                }
+              },
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "ResultPath": "$.ParallelJobResults",
+      "Next": "TerminateEMRCluster",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "SparkJobsFailed",
+          "ResultPath": "$.Error"
+        }
+      ]
+    },
+    "TerminateEMRCluster": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::elasticmapreduce:terminateCluster.sync",
+      "Parameters": {
+        "ClusterId.$": "$.ClusterInfo.ClusterId"
+      },
+      "ResultPath": "$.TerminationResult",
+      "Next": "StartGlueCrawler",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+    "StartGlueCrawler": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+      "Parameters": {
+        "Name": "car-rental-processed-data-crawler"
+      },
+      "ResultPath": "$.CrawlerStart",
+      "Next": "WaitForCrawler",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "CrawlerFailed",
+          "ResultPath": "$.Error"
+        }
+      ]
+    },
+    "WaitForCrawler": {
+      "Type": "Wait",
+      "Seconds": 100,
+      "Next": "QueryDataWithAthena"
+    },
+    "QueryDataWithAthena": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "QueryLocationMetrics",
+          "States": {
+            "QueryLocationMetrics": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+              "Parameters": {
+                "QueryString": "SELECT pickup_location_name, pickup_city, total_revenue, total_transactions FROM car_rental_analytics.location_metrics ORDER BY total_revenue DESC LIMIT 10",
+                "QueryExecutionContext": {
+                  "Database": "car_rental_analytics"
+                },
+                "ResultConfiguration": {
+                  "OutputLocation": "s3://car-rental-data-buck1/athena-results/"
+                },
+                "WorkGroup": "primary"
+              },
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 10,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ]
+            }
+          }
+        },
+        {
+          "StartAt": "QueryVehicleMetrics",
+          "States": {
+            "QueryVehicleMetrics": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+              "Parameters": {
+                "QueryString": "SELECT vehicle_type, brand, total_transactions, total_revenue FROM car_rental_analytics.vehicle_type_metrics ORDER BY total_transactions DESC LIMIT 10",
+                "QueryExecutionContext": {
+                  "Database": "car_rental_analytics"
+                },
+                "ResultConfiguration": {
+                  "OutputLocation": "s3://car-rental-data-buck1/athena-results/"
+                },
+                "WorkGroup": "primary"
+              },
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 10,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ]
+            }
+          }
+        },
+        {
+          "StartAt": "QueryUserMetrics",
+          "States": {
+            "QueryUserMetrics": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+              "Parameters": {
+                "QueryString": "SELECT first_name, last_name, total_spending, total_transactions FROM car_rental_analytics.user_metrics ORDER BY total_spending DESC LIMIT 10",
+                "QueryExecutionContext": {
+                  "Database": "car_rental_analytics"
+                },
+                "ResultConfiguration": {
+                  "OutputLocation": "s3://car-rental-data-buck1/athena-results/"
+                },
+                "WorkGroup": "primary"
+              },
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 10,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "ResultPath": "$.AthenaQueryResults",
+      "Next": "PipelineSuccess",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "AthenaQueryFailed",
+          "ResultPath": "$.Error"
+        }
+      ]
+    },
+    "PipelineSuccess": {
+      "Type": "Succeed",
+      "Comment": "Car Rental Data Pipeline completed successfully with automated Athena queries"
+    },
+    "ClusterCreationFailed": {
+      "Type": "Fail",
+      "Cause": "EMR Cluster creation failed",
+      "Error": "ClusterCreationError"
+    },
+    "SparkJobsFailed": {
+      "Type": "Fail",
+      "Cause": "One or both Spark jobs failed",
+      "Error": "SparkJobsError"
+    },
+    "CrawlerFailed": {
+      "Type": "Fail",
+      "Cause": "Glue Crawler failed",
+      "Error": "CrawlerError"
+    },
+    "AthenaQueryFailed": {
+      "Type": "Fail",
+      "Cause": "Athena queries failed",
+      "Error": "AthenaQueryError"
+    }
+  }
+}
